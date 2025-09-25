@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>p5.js Sketch</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.3/p5.min.js"></script>
+</head>
+<body>
+    <script>
+
+// --- Game State Variables ---
+let fruitShapes = []; // Array to hold all fruit data
+let currentFruitIndex = 0; // Index of the fruit currently displayed
+
+let targetColor;        // Stored as a p5.Color object for the current target fruit
+let currentPlayerColor; // Stored as a p5.Color object, updated each frame
+
+// Raw RGB components for player color, used for calculations
+// and then to update currentPlayerColor object
+let playerColorR = 0; 
+let playerColorG = 0; 
+let playerColorB = 0; 
+
+let swatches = [];
+let swatchColors = []; // Store p5.Color objects / special objects for all buttons
+// selectedSwatchId is no longer needed as color applies directly on click
+
+const blendingOpacity = 0.1; // 10% opacity for each added layer
+const matchTolerance = 0.05; // Linear tolerance for WINNING color matching (will be squared)
+
+let isGameActive = true; // Simple game active state
+let startTime;
+let elapsedTime = 0;
+
+// --- UNDO FUNCTIONALITY ---
+let colorHistory = []; // Stores objects like {r, g, b}
+const MAX_HISTORY_STATES = 15; // Limit to prevent excessive memory usage
+
+// --- Layout Constants ---
+const FRUIT_SIZE = 150; // Base size for fruits
+const SWATCH_SIZE = 60; // Diameter for swatches and the undo button
+const SWATCH_SPACING = 20;
+
+// LEFT_FRUIT_X will now be initialized inside setup()
+let LEFT_FRUIT_X; 
+
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+  
+  // Initialize LEFT_FRUIT_X here, after canvas is created and width/windowWidth are defined
+  LEFT_FRUIT_X = width * 0.25; 
+
+  // Initialize fruit shapes and their target colors
+  fruitShapes.push({
+    name: "Banana", targetColor: color(255, 220, 0),
+    vertices: [{ x: -20, y: -80 }, { x: 20, y: -85 }, { x: 60, y: -60 }, { x: 70, y: -20 }, { x: 60, y: 30 }, { x: 30, y: 70 }, { x: -10, y: 80 }, { x: -40, y: 60 }, { x: -60, y: 20 }, { x: -65, y: -30 }, { x: -50, y: -70 }],
+    leafVertices: [{ x: -40, y: -100 }, { x: -20, y: -120 }, { x: 0, y: -100 }, { x: -20, y: -90 }]
+  });
+  fruitShapes.push({
+    name: "Apple", targetColor: color(200, 0, 50),
+    vertices: [{ x: -50, y: 0 }, { x: -30, y: -60 }, { x: 0, y: -80 }, { x: 30, y: -60 }, { x: 50, y: 0 }, { x: 30, y: 60 }, { x: 0, y: 80 }, { x: -30, y: 60 }],
+    leafVertices: [{ x: -5, y: -85 }, { x: 15, y: -90 }, { x: 10, y: -100 }, { x: -10, y: -95 }]
+  });
+  fruitShapes.push({
+    name: "Orange", targetColor: color(255, 140, 0),
+    vertices: [{ x: -60, y: 0 }, { x: -40, y: -40 }, { x: 0, y: -60 }, { x: 40, y: -40 }, { x: 60, y: 0 }, { x: 40, y: 40 }, { x: 0, y: 60 }, { x: -40, y: 40 }],
+    leafVertices: [{ x: -5, y: -65 }, { x: 15, y: -70 }, { x: 10, y: -80 }, { x: -10, y: -75 }]
+  });
+  fruitShapes.push({
+    name: "Lemon", targetColor: color(255, 255, 100),
+    vertices: [{ x: -80, y: -10 }, { x: -60, y: -40 }, { x: 0, y: -50 }, { x: 60, y: -40 }, { x: 80, y: -10 }, { x: 60, y: 40 }, { x: 0, y: 50 }, { x: -60, y: 40 }],
+    leafVertices: [{ x: -70, y: -50 }, { x: -50, y: -60 }, { x: -60, y: -70 }, { x: -80, y: -60 }]
+  });
+  fruitShapes.push({
+    name: "Grape", targetColor: color(128, 0, 128),
+    vertices: [{ x: -30, y: -40 }, { x: 0, y: -50 }, { x: 30, y: -40 }, { x: 40, y: 0 }, { x: 30, y: 40 }, { x: 0, y: 50 }, { x: -30, y: 40 }, { x: -40, y: 0 }],
+    leafVertices: [{ x: -10, y: -60 }, { x: 10, y: -65 }, { x: 5, y: -75 }, { x: -15, y: -70 }]
+  });
+  fruitShapes.push({
+    name: "Pear", targetColor: color(170, 255, 100),
+    vertices: [{ x: -30, y: -70 }, { x: 20, y: -80 }, { x: 40, y: -50 }, { x: 50, y: 0 }, { x: 40, y: 40 }, { x: 20, y: 70 }, { x: -20, y: 70 }, { x: -40, y: 40 }, { x: -50, y: 0 }, { x: -40, y: -50 }],
+    leafVertices: [{ x: -5, y: -85 }, { x: 15, y: -90 }, { x: 10, y: -100 }, { x: -10, y: -95 }]
+  });
+  fruitShapes.push({
+    name: "Cherry", targetColor: color(180, 0, 0),
+    vertices: [{ x: -30, y: -10 }, { x: -10, y: -30 }, { x: 10, y: -30 }, { x: 30, y: -10 }, { x: 30, y: 10 }, { x: 10, y: 30 }, { x: -10, y: 30 }, { x: -30, y: 10 }],
+    leafVertices: [{ x: 0, y: -35 }, { x: 5, y: -55 }, { x: -5, y: -55 }]
+  });
+  fruitShapes.push({
+    name: "Strawberry", targetColor: color(255, 80, 120),
+    vertices: [{ x: 0, y: -80 }, { x: 50, y: -40 }, { x: 60, y: 20 }, { x: 40, y: 60 }, { x: 0, y: 80 }, { x: -40, y: 60 }, { x: -60, y: 20 }, { x: -50, y: -40 }],
+    leafVertices: [{ x: -30, y: -60 }, { x: 30, y: -60 }, { x: 0, y: -90 }, { x: -10, y: -70 }]
+  });
+  fruitShapes.push({
+    name: "Blueberry", targetColor: color(60, 0, 180),
+    vertices: [{ x: -25, y: 0 }, { x: -15, y: -20 }, { x: 0, y: -25 }, { x: 15, y: -20 }, { x: 25, y: 0 }, { x: 15, y: 20 }, { x: 0, y: 25 }, { x: -15, y: 20 }],
+    leafVertices: []
+  });
+  // Watermelon Slice has been REMOVED
+  fruitShapes.push({
+    name: "Kiwi", targetColor: color(130, 180, 60),
+    vertices: [{ x: -70, y: 0 }, { x: -40, y: -40 }, { x: 0, y: -50 }, { x: 40, y: -40 }, { x: 70, y: 0 }, { x: 40, y: 40 }, { x: 0, y: 50 }, { x: -40, y: 40 }],
+    leafVertices: []
+  });
+
+
+  // Define base colors + the special Undo "swatch"
+  swatchColors = [
+    color(255, 0, 0),    // Red
+    color(0, 255, 0),    // Green
+    color(0, 0, 255),    // Blue
+    color(0, 0, 0),      // Black
+    { color: color(200), isUndoButton: true, id: 'undo' } // Special object for Undo button
+  ];
+
+  // Initialize swatches array with positions
+  initSwatches();
+
+  // Set current fruit and its target color. Pick a random fruit from the array.
+  currentFruitIndex = floor(random(fruitShapes.length));
+  targetColor = fruitShapes[currentFruitIndex].targetColor;
+  console.log(`Target Fruit: ${fruitShapes[currentFruitIndex].name}, Target Color: (${red(targetColor)}, ${green(targetColor)}, ${blue(targetColor)})`);
+
+  // Initialize the player color objects once in setup
+  currentPlayerColor = color(0, 0, 0); // Start as black
+
+  // Set initial player color raw components
+  playerColorR = 0;
+  playerColorG = 0;
+  playerColorB = 0;
+  saveColorState(); // Save initial black state to history
+
+  startTime = millis();
+  
+  textAlign(CENTER, CENTER); // Set global text alignment for all text elements
+  textSize(24);
+  console.log("Setup complete. Game starting.");
+}
+
+// Helper function to initialize/reposition all swatches
+function initSwatches() {
+  console.log("initSwatches() called.");
+  swatches = []; // Clear existing swatches
+  let totalSwatchesWidth = (SWATCH_SIZE * swatchColors.length) + (SWATCH_SPACING * (swatchColors.length - 1));
+  let startX = (width - totalSwatchesWidth) / 2;
+  const swatchY = height * 0.9;
+
+  for (let i = 0; i < swatchColors.length; i++) {
+    const sColor = swatchColors[i].isUndoButton ? swatchColors[i].color : swatchColors[i];
+    const sId = swatchColors[i].isUndoButton ? swatchColors[i].id : i;
+    const isUndo = swatchColors[i].isUndoButton || false;
+
+    swatches.push({
+      id: sId,
+      color: sColor,
+      x: startX + i * (SWATCH_SIZE + SWATCH_SPACING) + SWATCH_SIZE / 2, // Centered X for ellipse
+      y: swatchY + SWATCH_SIZE / 2, // Centered Y for ellipse
+      w: SWATCH_SIZE, // diameter for circular swatch
+      h: SWATCH_SIZE, // diameter for circular swatch
+      originalX: startX + i * (SWATCH_SIZE + SWATCH_SPACING) + SWATCH_SIZE / 2,
+      originalY: swatchY + SWATCH_SIZE / 2,
+      isUndoButton: isUndo // Mark as undo button
+    });
+    console.log(`  Swatch ${i} (ID: ${sId}, Type: ${isUndo ? 'Undo' : 'Color'}): x=${swatches[i].x.toFixed(2)}, y=${swatches[i].y.toFixed(2)}, w=${swatches[i].w}, h=${swatches[i].h}`);
+  }
+  console.log(`initSwatches() complete. Total swatches: ${swatches.length}`);
+}
+
+function saveColorState() {
+  colorHistory.push({
+    r: playerColorR,
+    g: playerColorG,
+    b: playerColorB
+  });
+  // Trim history if it gets too long
+  if (colorHistory.length > MAX_HISTORY_STATES) {
+    colorHistory.shift(); // Remove the oldest state
+  }
+  // console.log(`Saved color state. History length: ${colorHistory.length}`); // Removed for less clutter
+}
+
+function undoColorChange() {
+  if (colorHistory.length > 1) { // Always keep at least the initial state (length > 1 means there's a previous state to revert to)
+    colorHistory.pop(); // Remove current (most recent) state
+    const prevState = colorHistory[colorHistory.length - 1]; // Get the state before that
+    playerColorR = prevState.r;
+    playerColorG = prevState.g;
+    playerColorB = prevState.b;
+    console.log(`Undid color change. Current PlayerColor: (${round(playerColorR)}, ${round(playerColorG)}, ${round(playerColorB)}). History length: ${colorHistory.length}`);
+  } else {
+    console.log("Cannot undo further (at initial state).");
+  }
+}
+
+
+let lastLogTime = 0;
+const logInterval = 1000; // Log every 1000ms (1 second) to avoid excessive console output
+
+function draw() {
+  // console.log("draw() called."); // Debug: confirm draw is running
+  background(175); // Grey background
+
+  // --- Draw Target Fruit (Left) ---
+  const targetFruitX = LEFT_FRUIT_X; // Using the initialized global variable
+  const targetFruitY = height / 2;
+  // Pass false for target fruit, so it doesn't draw an outline
+  drawFruit(fruitShapes[currentFruitIndex], targetFruitX, targetFruitY, FRUIT_SIZE, targetColor, false);
+  
+  // --- Update and Draw Player Fruit (Right) ---
+  currentPlayerColor.setRed(playerColorR);
+  currentPlayerColor.setGreen(playerColorG);
+  currentPlayerColor.setBlue(playerColorB);
+
+  const playerFruitX = width * 0.75;
+  const playerFruitY = height / 2;
+  // PASS FALSE HERE TO REMOVE BLACK STROKE FROM RIGHT FRUIT
+  drawFruit(fruitShapes[currentFruitIndex], playerFruitX, playerFruitY, FRUIT_SIZE, currentPlayerColor, false); 
+
+  // --- Draw Swatches ---
+  drawSwatches();
+
+  // --- Draw Timer ---
+  drawTimer();
+
+  // --- Check for Color Match ---
+  if (isGameActive && checkColorMatch(currentPlayerColor, targetColor, matchTolerance)) {
+    isGameActive = false;
+    textSize(36); // Slightly smaller font for the longer message
+    fill(0); // Changed winning message color to BLACK
+    text("You have good eyes, now go back to work", width / 2, height / 2 + FRUIT_SIZE / 2 + 50); // Changed winning message text
+    console.log(`Game MATCH! at ${nf(elapsedTime/1000, 0, 2)} seconds. Final PlayerColor: (${round(playerColorR)}, ${round(playerColorG)}, ${round(playerColorB)})`);
+    noLoop(); // Stop the draw loop once a match is found
+  }
+
+  // --- Debug Logging ---
+  if (isGameActive && millis() > lastLogTime + logInterval) { // Log basic state every second
+    console.log(`Frame: ${frameCount}, Time: ${nf(millis()/1000, 0, 2)}s, PlayerColor: (${round(playerColorR)}, ${round(playerColorG)}, ${round(playerColorB)})`);
+    lastLogTime = millis();
+  }
+}
+
+/**
+ * Draws a fruit shape and its leaf.
+ * @param {object} fruit - The fruit object containing vertices and potentially leafVertices.
+ * @param {number} x - X-coordinate for the fruit's center.
+ * @param {number} y - Y-coordinate for the fruit's center.
+ * @param {number} size - Scaling factor for the fruit.
+ * @param {p5.Color} fillColor - The fill color for the fruit body as a p5.Color object.
+ * @param {boolean} drawOutline - If true, draws a black outline over the fruit.
+ */
+function drawFruit(fruit, x, y, size, fillColor, drawOutline) {
+  push();
+  translate(x, y);
+  scale(size / 100); // Scale based on a reference size of 100
+
+  // Draw the fruit body using the p5.Color object
+  fill(fillColor);
+  noStroke(); 
+  beginShape();
+  for (let v of fruit.vertices) {
+    vertex(v.x, v.y);
+  }
+  endShape(CLOSE);
+
+  // Draw the leaf if it exists and has vertices
+  if (fruit.leafVertices && fruit.leafVertices.length > 0) {
+    fill(0, 150, 0); // Green color for leaf
+    noStroke();
+    beginShape();
+    for (let v of fruit.leafVertices) {
+      vertex(v.x, v.y);
+    }
+    endShape(CLOSE);
+  }
+  
+  // Draw black outline if requested (e.g., for the target fruit)
+  if (drawOutline) {
+    noFill();
+    stroke(0);
+    strokeWeight(3);
+    beginShape();
+    for (let v of fruit.vertices) {
+      vertex(v.x, v.y);
+    }
+    endShape(CLOSE);
+  }
+  pop();
+}
+
+
+/**
+ * Draws the color swatches and the undo button at the bottom of the screen.
+ */
+function drawSwatches() {
+  // console.log(`drawSwatches() called. Swatches length: ${swatches.length}`); // Debug: confirm drawSwatches is called
+  for (let swatch of swatches) {
+    push();
+    // Always draw the background circle for both color swatches and the undo button
+    fill(swatch.color); 
+    stroke(0);
+    strokeWeight(2);
+    ellipse(swatch.x, swatch.y, swatch.w, swatch.h); // Circular button/swatch
+
+    if (swatch.isUndoButton) {
+      // Draw Unicode Undo symbol (left arrow)
+      fill(50); // Dark grey for the symbol
+      noStroke();
+      textSize(swatch.w * 0.6); // Scale text size to fit button
+      // For general p5.js, default font usually works for common symbols.
+      text('\u2190', swatch.x, swatch.y + swatch.h * 0.05); // Adjust Y for vertical centering
+      // console.log(`    Drawing Undo icon at x=${swatch.x.toFixed(2)}, y=${swatch.y.toFixed(2)} with size ${swatch.w * 0.6}`); // Debug log for icon
+    } else {
+      // Regular color swatches have no additional elements drawn
+    }
+    pop();
+  }
+}
+
+/**
+ * Draws the stopwatch timer.
+ */
+function drawTimer() {
+  if (isGameActive) {
+    elapsedTime = millis() - startTime;
+  }
+
+  let totalSeconds = floor(elapsedTime / 1000);
+  let minutes = floor(totalSeconds / 60);
+  let seconds = totalSeconds % 60;
+
+  fill(0);
+  textSize(32); // Specific text size for timer
+  text(nf(minutes, 2) + ":" + nf(seconds, 2), width / 2, height * 0.1);
+}
+
+/**
+ * Checks if two colors match within a given tolerance using squared Euclidean distance.
+ * @param {p5.Color} color1 - The first color (e.g., player's color).
+ * @param {p5.Color} color2 - The second color (e.g., target color).
+ * @param {number} tolerance - The maximum allowed *linear* normalized difference (0-1).
+ *                             This value will be squared for the comparison.
+ * @returns {boolean} True if colors match, false otherwise.
+ */
+function checkColorMatch(color1, color2, tolerance) {
+  let r1 = red(color1);
+  let g1 = green(color1);
+  let b1 = blue(color1);
+
+  let r2 = red(color2);
+  let g2 = green(color2);
+  let b2 = blue(color2);
+
+  let diffR = r1 - r2;
+  let diffG = g1 - g2;
+  let diffB = b1 - b2;
+
+  let distSq = diffR * diffR + diffG * diffG + diffB * diffB;
+  
+  // Max possible squared distance from (0,0,0) to (255,255,255) in RGB space
+  let maxPossibleDistSq = 3 * (255 * 255); 
+  
+  // Normalize the squared distance
+  let normalizedDistSq = distSq / maxPossibleDistSq;
+
+  // Compare with the square of the tolerance
+  return normalizedDistSq <= (tolerance * tolerance);
+}
+
+// --- Mouse Interaction ---
+
+// Helper function to check if mouse is over a fruit (based on circular bounds)
+function isMouseOverFruit(fruitX, fruitY) {
+  let fruitHitRadius = FRUIT_SIZE * 0.7; // Adjust as needed, based on typical fruit dimensions
+  return dist(mouseX, mouseY, fruitX, fruitY) < fruitHitRadius;
+}
+
+function mousePressed() {
+  if (!isGameActive) return;
+
+  // Iterate through all swatches (including the undo button now)
+  for (let swatch of swatches) {
+    let d = dist(mouseX, mouseY, swatch.x, swatch.y);
+    if (d < swatch.w / 2) { // w is diameter here (SWATCH_SIZE)
+      if (swatch.isUndoButton) {
+        undoColorChange();
+        return; // Handled undo click, exit function
+      } else {
+        // This is a color swatch - apply its color directly
+        // Save current state BEFORE applying new color
+        saveColorState(); 
+
+        let addedColor = swatch.color; // Use the color directly from the clicked swatch
+        let r_add = red(addedColor);
+        let g_add = green(addedColor);
+        let b_add = blue(addedColor);
+
+        // --- ADDITIVE blending ---
+        playerColorR = playerColorR + r_add * blendingOpacity;
+        playerColorG = playerColorG + g_add * blendingOpacity;
+        playerColorB = playerColorB + b_add * blendingOpacity;
+        // --- END ADDITIVE blending ---
+
+        // Clamp values to 0-255 range (always good practice)
+        playerColorR = constrain(playerColorR, 0, 255);
+        playerColorG = constrain(playerColorG, 0, 255);
+        playerColorB = constrain(playerColorB, 0, 255);
+        console.log(`Color applied! New PlayerColor: (${round(playerColorR)}, ${round(playerColorG)}, ${round(playerColorB)})`);
+        return; // Handled color swatch click, exit function
+      }
+    }
+  }
+
+  // If clicked anywhere else (fruit or background), do nothing as per new input method
+  console.log("Clicked outside swatches. No action taken.");
+}
+
+// mouseDragged and mouseReleased are no longer used for this interaction method
+
+// Ensure canvas resizes with window
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  // Re-initialize LEFT_FRUIT_X on resize
+  LEFT_FRUIT_X = width * 0.25;
+
+  // Recalculate swatch positions (including undo button) for responsiveness
+  initSwatches();
+  console.log("Window resized.");
+}
+
+    </script>
+</body>
+</html>
